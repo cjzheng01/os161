@@ -295,7 +295,7 @@ proc.o: ../../proc/proc.c ../../include/types.h \
   ../../include/current.h includelinks/machine/current.h \
   ../../include/addrspace.h ../../include/vm.h includelinks/machine/vm.h \
   ../../include/vnode.h ../../include/vfs.h ../../include/synch.h \
-  ../../include/kern/fcntl.h
+  ../../include/kern/fcntl.h opt-A2.h
 main.o: ../../startup/main.c ../../include/types.h \
   ../../include/kern/types.h includelinks/kern/machine/types.h \
   includelinks/machine/types.h ../../include/kern/errno.h \
@@ -362,7 +362,9 @@ proc_syscalls.o: ../../syscall/proc_syscalls.c ../../include/types.h \
   includelinks/machine/thread.h ../../include/setjmp.h \
   includelinks/kern/machine/setjmp.h ../../include/proc.h \
   ../../include/addrspace.h ../../include/vm.h includelinks/machine/vm.h \
-  ../../include/copyinout.h
+  ../../include/copyinout.h opt-A2.h includelinks/mips/trapframe.h \
+  ../../include/synch.h ../../include/vfs.h ../../include/kern/fcntl.h \
+  includelinks/mips/types.h
 runprogram.o: ../../syscall/runprogram.c ../../include/types.h \
   ../../include/kern/types.h includelinks/kern/machine/types.h \
   includelinks/machine/types.h ../../include/kern/errno.h \
@@ -588,7 +590,7 @@ syscall.o: ../../arch/mips/syscall/syscall.c ../../include/types.h \
   includelinks/machine/spinlock.h ../../include/threadlist.h \
   includelinks/machine/thread.h ../../include/setjmp.h \
   includelinks/kern/machine/setjmp.h ../../include/current.h \
-  includelinks/machine/current.h ../../include/syscall.h
+  includelinks/machine/current.h ../../include/syscall.h opt-A2.h
 cpu.o: ../../arch/mips/thread/cpu.c ../../include/types.h \
   ../../include/kern/types.h includelinks/kern/machine/types.h \
   includelinks/machine/types.h ../../include/lib.h ../../include/cdefs.h \

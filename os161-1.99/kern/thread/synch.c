@@ -207,7 +207,8 @@ lock_acquire(struct lock *lock)
 void
 lock_release(struct lock *lock)
 {   
-    KASSERT(lock != NULL && lock_do_i_hold(lock));
+    KASSERT(lock != NULL);
+    KASSERT(lock_do_i_hold(lock));
     spinlock_acquire(&(lock->lk_spinlock));
     lock->held = 0;
     lock->owner = NULL;

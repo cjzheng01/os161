@@ -68,7 +68,13 @@ struct proc {
   struct vnode *console;                /* a vnode for the console device */
 #endif
 
-	/* add more material here as needed */
+    pid_t pid;
+	int exit_code, status;
+    struct lock *lk;
+    struct proc *parent;
+    struct array *children;
+    struct cv *parent_cv;
+
 };
 
 /* This is the process structure for the kernel and for kernel-only threads. */
