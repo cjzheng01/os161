@@ -30,16 +30,22 @@ void sys__exit(int exitcode) {
 #if OPT_A2
   for (size_t i = 0 ; i < array_num(p->children); i++){
     struct proc *child = (struct proc *) array_get(p->children, i);
+    // delete zombie proc
     if (child->status == 0){
-      array_remove(p->children, i);
       proc_destroy(child);
-      i -= 1; // do not update the index
     }
+    array_remove(p->children, i);
+    i -= 1; // do not update the index
   }
-  int can_fully_delete = 0;
-  if (!p->parent || !p->parent->status){
-    can_fully_delete = true;
-  }
+
+  int can_fully_delete = 0; // check if the process has living parent
+  if (p->parent == NULL) {
+    can_fully_delete = 1;
+  } else {
+      if (p->parent->status != 1) { // if its parent has already exited
+        can_fully_delete = 1;
+      }
+  } 
 
 #else
   /* for now, just include this to keep the compiler from complaining about
@@ -70,7 +76,7 @@ void sys__exit(int exitcode) {
 #if OPT_A2
 	if (can_fully_delete) {
 		proc_destroy(p);
-	} else {
+	} else { // set the proc as dead
 		p->exit_code = exitcode;
 		p->status = 0;
         cv_signal(p->parent_cv, p->lk);
@@ -141,7 +147,9 @@ sys_waitpid(pid_t pid,
 }   
 
 #if OPT_A2
-int sys_fork(struct trapframe *tf, pid_t *retval) {
+int 
+sys_fork(struct trapframe *tf, pid_t *retval) 
+{
     int err = 1; // record the error code in this function.
 
     // Create a new process structure for the child process.
@@ -169,4 +177,105 @@ int sys_fork(struct trapframe *tf, pid_t *retval) {
 
     return 0;
 }
+
+
+int 
+sys_execv(const char *program, char **args)
+{
+    size_t nargs = 0;
+    int err = 0;
+    
+    // count the number of arguments 
+    while(args[nargs]) nargs++;
+
+    char **kernel_args = kmalloc((nargs + 1) * sizeof(char *));
+    vaddr_t *stack_args = kmalloc((nargs + 1) * sizeof(vaddr_t));
+
+    // copy them into the kernel
+    kernel_args[nargs] = NULL;
+    for (size_t i = 0; i < nargs; i++){
+        kernel_args[i] = kmalloc((strlen(args[i]) + 1) * sizeof(char));
+        err = copyinstr((const_userptr_t) args[i], kernel_args[i], (strlen(args[i]) + 1), NULL);
+        if (err) {
+            return err;
+        }
+    }
+
+    // copy the program path from user space into the kernel
+    char* prog_name = kmalloc((strlen(program) + 1) * sizeof(char));
+    err = copyinstr((const_userptr_t) program, prog_name, (strlen(program) + 1), NULL);
+    if (err) {
+        return err;
+    }
+
+    struct addrspace *as;
+	struct vnode *v;
+	vaddr_t entrypoint, stackptr = USERSTACK; // base/starting address of the stack
+	int result;
+
+	/* Open the file. */
+	result = vfs_open(prog_name, O_RDONLY, 0, &v);
+	if (result) {
+		return result;
+	}
+
+	/* Create a new address space. */
+	as = as_create();
+	if (as ==NULL) {
+		vfs_close(v);
+		return ENOMEM;
+	}
+
+	/* Switch to it and activate it. */
+	struct addrspace *old_as = curproc_setas(as);
+	as_activate();
+  
+	/* Load the executable. */
+	result = load_elf(v, &entrypoint);
+	if (result) {
+		/* p_addrspace will go away when curproc is destroyed */
+		vfs_close(v);
+		return result;
+	}
+
+	/* Done with the file now. */
+	vfs_close(v);
+
+	/* Define the user stack in the address space */
+
+    // copy the arguments from the user space into the new address space.
+    
+    /* push on the args onto the stack and keep track of the address of each string */
+	for (int i = nargs - 1; i >= 0; i--){
+		stackptr -= ROUNDUP(strlen(kernel_args[i]) + 1, 4);
+		copyoutstr((const void *) kernel_args[i], (userptr_t) stackptr, strlen(kernel_args[i]) + 1, NULL);
+		stack_args[i] = stackptr;
+	}
+
+	/* put a NULL terminate array of pointers to the strings */
+	stack_args[nargs] = (vaddr_t) NULL;
+
+	for (int i = nargs; i >= 0; i--){
+		stackptr -= sizeof(vaddr_t);
+		copyout((const void *) &stack_args[i], (userptr_t) stackptr, sizeof(vaddr_t));
+	}
+
+    // clean before return
+    for (size_t i = 0; i < nargs; i++) kfree(kernel_args[i]);
+    kfree(kernel_args);
+    kfree(prog_name);
+    as_destroy(old_as);
+    kfree(stack_args);
+
+	/* Warp to user mode. */
+	enter_new_process(nargs /*nargs*/, (userptr_t)stackptr /*userspace addr of argv*/,
+			  ROUNDUP(stackptr, 8), entrypoint);
+	
+	/* enter_new_process does not return. */
+	panic("enter_new_process returned\n");
+  
+	return EINVAL;
+}
+
 #endif /* OPT_A2 */
+

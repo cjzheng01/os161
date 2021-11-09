@@ -29,8 +29,8 @@
 
 #ifndef _SYSCALL_H_
 #define _SYSCALL_H_
-
-
+#include "proc.h"
+#include "opt-A2.h"
 struct trapframe; /* from <machine/trapframe.h> */
 
 /*
@@ -59,14 +59,16 @@ int sys_reboot(int code);
 int sys___time(userptr_t user_seconds, userptr_t user_nanoseconds);
 
 #ifdef UW
+// int sys_delete_zoombie(struct proc **p, size_t i);
 int sys_write(int fdesc,userptr_t ubuf,unsigned int nbytes,int *retval);
 void sys__exit(int exitcode);
 int sys_getpid(pid_t *retval);
 int sys_waitpid(pid_t pid, userptr_t status, int options, pid_t *retval);
 
+#if OPT_A2
 int sys_fork(struct trapframe* tf, pid_t* retval);
-// int sys_execv(const char *program, char **args);
-// void kargs_cleanup(char** kargs, int argc);
+int sys_execv(const char *program, char **args);
+#endif /* OPT_A2 */
 
 #endif // UW
 

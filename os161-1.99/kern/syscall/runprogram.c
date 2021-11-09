@@ -44,13 +44,87 @@
 #include <vfs.h>
 #include <syscall.h>
 #include <test.h>
-
+#include <copyinout.h>
+#include "opt-A2.h"
 /*
  * Load program "progname" and start running it in usermode.
  * Does not return except on error.
  *
  * Calls vfs_open on progname and thus may destroy it.
  */
+#if OPT_A2
+
+int
+runprogram(char *progname, char **args, size_t argc)
+{
+	struct addrspace *as;
+	struct vnode *v;
+	vaddr_t entrypoint, stackptr = USERSTACK; // base/starting address of the stack
+	int result;
+
+    vaddr_t *stack_args = kmalloc((argc + 1) * sizeof(vaddr_t));
+
+	/* Open the file. */
+	result = vfs_open(progname, O_RDONLY, 0, &v);
+	if (result) {
+		return result;
+	}
+
+	/* We should be a new process. */
+	KASSERT(curproc_getas() == NULL);
+
+	/* Create a new address space. */
+	as = as_create();
+	if (as == NULL) {
+		vfs_close(v);
+		return ENOMEM;
+	}
+
+	/* Switch to it and activate it. */
+	curproc_setas(as);
+	as_activate();
+
+	/* Load the executable. */
+	result = load_elf(v, &entrypoint);
+	if (result) {
+		/* p_addrspace will go away when curproc is destroyed */
+		vfs_close(v);
+		return result;
+	}
+
+	/* Done with the file now. */
+	vfs_close(v);
+
+	/* Define the user stack in the address space */
+    // copy the arguments from the user space into the new address space.
+	
+    /* push on the args onto the stack and keep track of the address of each string */
+	for (int i = argc - 1; i >= 0; i--){
+		stackptr = stackptr - ROUNDUP(strlen(args[i]) + 1, 4);
+		copyoutstr((const void *) args[i], (userptr_t) stackptr, strlen(args[i]) + 1, NULL);
+		stack_args[i] = stackptr;
+	}
+	
+    /* put a NULL terminate array of pointers to the strings */
+	stack_args[argc] = (vaddr_t) NULL;
+
+	for (int i = argc; i >= 0; i--){
+		stackptr -= sizeof(vaddr_t);
+		copyout((const void *) &stack_args[i], (userptr_t) stackptr, sizeof(vaddr_t));
+	}
+
+    // clean before return
+    kfree(stack_args);
+
+	/* Warp to user mode. */
+	enter_new_process(argc /*argc*/, (userptr_t) stackptr /*userspace addr of argv*/,
+			  ROUNDUP(stackptr, 8), entrypoint);
+	
+	/* enter_new_process does not return. */
+	panic("enter_new_process returned\n");
+	return EINVAL;
+}
+#else
 int
 runprogram(char *progname)
 {
@@ -106,3 +180,4 @@ runprogram(char *progname)
 	return EINVAL;
 }
 
+#endif /* OPT_A2 */
