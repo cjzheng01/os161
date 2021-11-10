@@ -187,15 +187,16 @@ syscall(struct trapframe *tf)
 void
 enter_forked_process(void *tf, unsigned long as)
 {
-	(void) as;
-    
     struct trapframe tf_c = *((struct trapframe *)tf);
+    kfree(tf);
+    
 	tf_c.tf_v0 = 0;
 	tf_c.tf_a3 = 0;
 	tf_c.tf_epc += 4;
 
-    kfree(tf);
 	mips_usermode(&tf_c);
+
+    (void) as; // slience warning
 }
 #else
 void

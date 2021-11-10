@@ -70,7 +70,11 @@ static struct semaphore *proc_count_mutex;
 struct semaphore *no_proc_sem;   
 #endif  // UW
 
+#if OPT_A2
+
 static volatile pid_t pid_counter;
+
+#endif // OPT_A2
 
 /*
  * Create a proc structure.
@@ -175,16 +179,18 @@ proc_destroy(struct proc *proc)
 #endif // UW
 
 #if OPT_A2
+
     for (size_t i = 0; i < array_num(proc->children); i++){
        struct proc *child = (struct proc *) array_get(proc->children, i);
        child->parent = NULL;
     }
-    lock_destroy(proc->lk);
-	array_setsize(proc->children, 0);
-	array_destroy(proc->children);
-	cv_destroy(proc->parent_cv);
+    
     proc->exit_code = 0;
 	proc->status = 0;
+    lock_destroy(proc->lk);
+    cv_destroy(proc->parent_cv);
+	array_setsize(proc->children, 0);
+	array_destroy(proc->children);
 	
 #endif
 
@@ -233,7 +239,12 @@ proc_bootstrap(void)
     panic("could not create no_proc_sem semaphore\n");
   }
 #endif // UW 
+
+#ifdef OPT_A2
+
   pid_counter = (pid_t) 1;
+
+#endif /* OPT_A2 */
 }
 
 /*
@@ -252,6 +263,13 @@ proc_create_runprogram(const char *name)
 	if (proc == NULL) {
 		return NULL;
 	}
+
+#ifdef OPT_A2
+
+    pid_counter++;
+	proc->pid = pid_counter - 1;
+
+#endif /* OPT_A2 */
 
 #ifdef UW
 	/* open the console - this should always succeed */
@@ -287,11 +305,7 @@ proc_create_runprogram(const char *name)
 	}
 	spinlock_release(&curproc->p_lock);
 #endif // UW
-    // 
-	P(proc_count_mutex); // provide mutual exclusion
-	proc->pid = pid_counter;
-	pid_counter++;
-	V(proc_count_mutex);
+
 
 #ifdef UW
 	/* increment the count of processes */

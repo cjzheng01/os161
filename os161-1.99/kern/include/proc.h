@@ -39,6 +39,8 @@
 #include <spinlock.h>
 #include <thread.h> /* required for struct threadarray */
 
+#include "opt-A2.h"
+
 struct addrspace;
 struct vnode;
 #ifdef UW
@@ -68,12 +70,16 @@ struct proc {
   struct vnode *console;                /* a vnode for the console device */
 #endif
 
+#ifdef OPT_A2
+
     pid_t pid;
 	int exit_code, status;
     struct lock *lk;
     struct proc *parent;
     struct array *children;
     struct cv *parent_cv;
+
+#endif /* OPT_A2 */
 
 };
 

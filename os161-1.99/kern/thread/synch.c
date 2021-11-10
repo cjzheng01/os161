@@ -120,7 +120,7 @@ P(struct semaphore *sem)
 		 */
 		wchan_lock(sem->sem_wchan);
 		spinlock_release(&sem->sem_lock);
-                wchan_sleep(sem->sem_wchan);
+        wchan_sleep(sem->sem_wchan);
 
 		spinlock_acquire(&sem->sem_lock);
         }
@@ -132,12 +132,12 @@ P(struct semaphore *sem)
 void
 V(struct semaphore *sem)
 {
-        KASSERT(sem != NULL);
+    KASSERT(sem != NULL);
 
 	spinlock_acquire(&sem->sem_lock);
 
-        sem->sem_count++;
-        KASSERT(sem->sem_count > 0);
+    sem->sem_count++;
+    KASSERT(sem->sem_count > 0);
 	wchan_wakeone(sem->sem_wchan);
 
 	spinlock_release(&sem->sem_lock);
@@ -181,10 +181,10 @@ lock_destroy(struct lock *lock)
 {
         KASSERT(lock != NULL);
 
-        spinlock_cleanup(&lock->lk_spinlock);
-	    wchan_destroy(lock->lk_wchan);
         
         kfree(lock->lk_name);
+        spinlock_cleanup(&lock->lk_spinlock);
+	    wchan_destroy(lock->lk_wchan);
         kfree(lock);
 }
 
@@ -199,7 +199,7 @@ lock_acquire(struct lock *lock)
         wchan_sleep(lock->lk_wchan);
         spinlock_acquire(&lock->lk_spinlock);
     }
-    lock->held = true;
+    lock->held = 1;
     lock->owner = curthread;
     spinlock_release(&lock->lk_spinlock);
 }
@@ -219,11 +219,11 @@ lock_release(struct lock *lock)
 bool
 lock_do_i_hold(struct lock *lock)
 {
-        KASSERT(lock != NULL);
-        spinlock_acquire(&lock->lk_spinlock);
-        bool temp = (lock->owner == curthread);
-        spinlock_release(&lock->lk_spinlock);
-        return temp;
+    KASSERT(lock != NULL);
+    spinlock_acquire(&lock->lk_spinlock);
+    bool temp = (lock->owner == curthread);
+    spinlock_release(&lock->lk_spinlock);
+    return temp;
 }
 
 ////////////////////////////////////////////////////////////
