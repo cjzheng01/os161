@@ -266,8 +266,7 @@ proc_create_runprogram(const char *name)
 
 #ifdef OPT_A2
 
-    pid_counter++;
-	proc->pid = pid_counter - 1;
+    proc->pid = pid_counter++;
 
 #endif /* OPT_A2 */
 

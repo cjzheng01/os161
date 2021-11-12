@@ -187,7 +187,7 @@ syscall(struct trapframe *tf)
 void
 enter_forked_process(void *tf, unsigned long as)
 {
-    struct trapframe tf_c = *((struct trapframe *)tf);
+    struct trapframe tf_c = *(struct trapframe *) tf;
     kfree(tf);
     
 	tf_c.tf_v0 = 0;
