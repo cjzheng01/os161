@@ -39,6 +39,7 @@
 #include <vm.h>
 #include "copyinout.h"
 #include "opt-A2.h"
+#include "opt-A3.h"
 /*
  * Dumb MIPS-only "VM system" that is intended to only be just barely
  * enough to struggle off the ground.
@@ -121,8 +122,12 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	switch (faulttype) {
 	    case VM_FAULT_READONLY:
+        #if OPT_A3
+        return EFAULT;
+        #else
 		/* We always create pages read-write, so we can't get this */
 		panic("dumbvm: got VM_FAULT_READONLY\n");
+        #endif /* OPT_A3 */
 	    case VM_FAULT_READ:
 	    case VM_FAULT_WRITE:
 		break;
@@ -169,7 +174,14 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	stackbase = USERSTACK - DUMBVM_STACKPAGES * PAGE_SIZE;
 	stacktop = USERSTACK;
 
+#ifdef OPT_A3
+    int text_segment_flag = 0;
+#endif
+    /* Determine the segment of the fault address by looking at the vbase and vtop addresses. */
 	if (faultaddress >= vbase1 && faultaddress < vtop1) {
+        #ifdef OPT_A3
+            text_segment_flag = 1;
+        #endif
 		paddr = (faultaddress - vbase1) + as->as_pbase1;
 	}
 	else if (faultaddress >= vbase2 && faultaddress < vtop2) {
@@ -195,15 +207,30 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		}
 		ehi = faultaddress;
 		elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+    #if OPT_A3
+        if (as->load_flag && text_segment_flag) elo &= ~TLBLO_DIRTY;
+    #endif /* OPT_A3 */
 		DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr);
 		tlb_write(ehi, elo, i);
 		splx(spl);
 		return 0;
 	}
 
+#if OPT_A3
+    ehi = faultaddress;
+	elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+    /* The text (i.e. code) segment should be read-only. */
+    if (as->load_flag && text_segment_flag) elo &= ~TLBLO_DIRTY;
+	DEBUG(DB_VM, "dumbvm: Ran out of TLB entries: 0x%x -> 0x%x\n", faultaddress, paddr);
+    /* when the TLB is full, it calls tlb_random() to write the entry into a random TLB slot */
+	tlb_random(ehi, elo);
+	splx(spl);
+	return 0;
+#else 
 	kprintf("dumbvm: Ran out of TLB entries - cannot handle page fault\n");
 	splx(spl);
 	return EFAULT;
+#endif /* OPT_A3 */
 }
 
 struct addrspace *
@@ -213,7 +240,10 @@ as_create(void)
 	if (as==NULL) {
 		return NULL;
 	}
+    #if OPT_A3
 
+    as->load_flag = 0;
+    #endif /* OPT_A3 */
 	as->as_vbase1 = 0;
 	as->as_pbase1 = 0;
 	as->as_npages1 = 0;
@@ -292,7 +322,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 		as->as_npages2 = npages;
 		return 0;
 	}
-
+    
 	/*
 	 * Support for more than two regions is not available.
 	 */
@@ -339,7 +369,7 @@ as_prepare_load(struct addrspace *as)
 int
 as_complete_load(struct addrspace *as)
 {
-	(void)as;
+	as->load_flag = 1;
 	return 0;
 }
 
