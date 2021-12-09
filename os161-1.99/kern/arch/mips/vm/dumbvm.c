@@ -60,6 +60,7 @@ paddr_t low_addr, high_addr, coremap_addr;
 size_t coremap_len, low_page;
 int is_coremap_created = 0;
 #endif /* OPT_A3 */
+
 void
 vm_bootstrap(void)
 {
@@ -124,7 +125,6 @@ free_kpages(vaddr_t addr)
 	paddr_t paddr = KVADDR_TO_PADDR(addr);
     /* Calculate the start page number of the memory block. */
     size_t page_num = (paddr - low_addr) / PAGE_SIZE;
-    KASSERT(((int *) PADDR_TO_KVADDR(coremap_addr))[page_num] == 1);
     int prev_label, curr_label = 0;
     while (page_num < coremap_len) {
         prev_label = curr_label;
@@ -273,7 +273,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
     /* The text (i.e. code) segment should be read-only. */
     if (as->load_flag && text_segment_flag) elo &= ~TLBLO_DIRTY;
-	DEBUG(DB_VM, "dumbvm: Ran out of TLB entries: 0x%x -> 0x%x\n", faultaddress, paddr);
     /* when the TLB is full, it calls tlb_random() to write the entry into a random TLB slot */
 	tlb_random(ehi, elo);
 	splx(spl);
@@ -293,7 +292,6 @@ as_create(void)
 		return NULL;
 	}
     #if OPT_A3
-
     as->load_flag = 0;
     #endif /* OPT_A3 */
 	as->as_vbase1 = 0;
@@ -426,7 +424,11 @@ as_prepare_load(struct addrspace *as)
 int
 as_complete_load(struct addrspace *as)
 {
+    #if OPT_A3
 	as->load_flag = 1;
+    #else
+    (void)as;
+    #endif /* OPT_A3 */
 	return 0;
 }
 
@@ -482,7 +484,8 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 
 #if OPT_A3
 /* Core-map Version 2 */
-paddr_t coremap_stealmem(unsigned long npages){
+paddr_t 
+coremap_stealmem(unsigned long npages){
     /* The last possible page to start to init these npages. */
     size_t final_start_page = coremap_len - (size_t) npages + 1;
     for (size_t i = low_page; i < final_start_page; i++) {
@@ -490,7 +493,7 @@ paddr_t coremap_stealmem(unsigned long npages){
             int is_available = 1;
             for (unsigned long page = 0; page < npages; page++) {
                 if (((int*) PADDR_TO_KVADDR(coremap_addr))[i + page]) {
-                    is_available = 0;
+                    is_available = 0; // meaning page i cannot be the start page
                     break;
                 }
             }
