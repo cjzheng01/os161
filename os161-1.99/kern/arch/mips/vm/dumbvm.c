@@ -29,6 +29,7 @@
 
 #include <types.h>
 #include <kern/errno.h>
+#include "kern/wait.h"
 #include <lib.h>
 #include <spl.h>
 #include <spinlock.h>
@@ -53,11 +54,34 @@
  */
 static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 
+#if OPT_A3
+// global variables
+paddr_t low_addr, high_addr, coremap_addr;
+size_t coremap_len, low_page;
+int is_coremap_created = 0;
+#endif /* OPT_A3 */
 void
 vm_bootstrap(void)
 {
-	/* Do nothing. */
+	#if OPT_A3
+    /* Calculate its size and leave the rest of RAM as frames to be allocated. */
+    is_coremap_created = 1;
+    /* Get the remaining physical memory in the system. */
+    ram_getsize(&low_addr, &high_addr);
+    /* Logically partition the remaining physical memory into fixed size frames. */
+    coremap_len = (high_addr - low_addr) / PAGE_SIZE;
+    /* Initialize that the free memory should be labeled 0 */
+    for (size_t i = 0; i < coremap_len; i++) ((int *) PADDR_TO_KVADDR(low_addr))[i] = 0;
+    /* The core-map should not track its own memory usage. */
+    coremap_addr = low_addr;
+    low_page = DIVROUNDUP(coremap_len, PAGE_SIZE);
+    low_addr = coremap_addr + ROUNDUP(coremap_len * sizeof(size_t), PAGE_SIZE);
+    #endif /* OPT_A3 */
 }
+
+#if OPT_A3
+paddr_t coremap_stealmem(unsigned long npages);
+#endif /* OPT_A3 */
 
 static
 paddr_t
@@ -66,9 +90,16 @@ getppages(unsigned long npages)
 	paddr_t addr;
 
 	spinlock_acquire(&stealmem_lock);
-
+    #if OPT_A3
+    /* Once ram_getsize has been called, do not call ram_stealmem again. */
+    if (is_coremap_created) {
+        addr = coremap_stealmem(npages);
+    } else {
+        addr = ram_stealmem(npages);
+    }
+    #else
 	addr = ram_stealmem(npages);
-	
+	#endif
 	spinlock_release(&stealmem_lock);
 	return addr;
 }
@@ -88,9 +119,30 @@ alloc_kpages(int npages)
 void 
 free_kpages(vaddr_t addr)
 {
-	/* nothing - leak the memory. */
-
-	(void)addr;
+#if OPT_A3
+	// spinlock_acquire
+	paddr_t paddr = KVADDR_TO_PADDR(addr);
+    /* Calculate the start page number of the memory block. */
+    size_t page_num = (paddr - low_addr) / PAGE_SIZE;
+    KASSERT(((int *) PADDR_TO_KVADDR(coremap_addr))[page_num] == 1);
+    int prev_label, curr_label = 0;
+    while (page_num < coremap_len) {
+        prev_label = curr_label;
+        curr_label = ((int *) PADDR_TO_KVADDR(coremap_addr))[page_num];
+        /* To free pages you need to check its successor to see if it is part 
+        of a larger allocation, i.e. is its count one higher than your count. */
+        if (curr_label == prev_label + 1) {
+            ((int *) PADDR_TO_KVADDR(coremap_addr))[page_num] = 0;
+            page_num++;
+            continue;
+        }
+        /* Otherwise it does not belong to the block we want to free. */
+        break;
+    }
+	// spinlock_release
+#else
+    (void) addr;
+#endif /* OPT_A3 */
 }
 
 void
@@ -258,6 +310,11 @@ as_create(void)
 void
 as_destroy(struct addrspace *as)
 {
+    #if OPT_A3
+    free_kpages(PADDR_TO_KVADDR(as->as_pbase1));
+	free_kpages(PADDR_TO_KVADDR(as->as_pbase2));
+	free_kpages(PADDR_TO_KVADDR(as->as_stackpbase));
+    #endif /* OPT_A3 */
 	kfree(as);
 }
 
@@ -422,3 +479,29 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	*ret = new;
 	return 0;
 }
+
+#if OPT_A3
+/* Core-map Version 2 */
+paddr_t coremap_stealmem(unsigned long npages){
+    /* The last possible page to start to init these npages. */
+    size_t final_start_page = coremap_len - (size_t) npages + 1;
+    for (size_t i = low_page; i < final_start_page; i++) {
+        if (((int*) PADDR_TO_KVADDR(coremap_addr))[i] == 0) { // not used
+            int is_available = 1;
+            for (unsigned long page = 0; page < npages; page++) {
+                if (((int*) PADDR_TO_KVADDR(coremap_addr))[i + page]) {
+                    is_available = 0;
+                    break;
+                }
+            }
+            if (is_available == 0) continue;
+            /* Construct the Coremap as stated in lecture */
+            int j = i;
+            for (unsigned long n = 1; n <= npages; n++, j++) ((int*) PADDR_TO_KVADDR(coremap_addr))[j] = n;
+            return low_addr + PAGE_SIZE * i; // start address
+        }
+        continue; // used
+    }
+	return 0;
+}
+#endif /* OPT_A3 */
