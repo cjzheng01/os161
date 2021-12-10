@@ -29,7 +29,6 @@
 
 #include <types.h>
 #include <kern/errno.h>
-#include "kern/wait.h"
 #include <lib.h>
 #include <spl.h>
 #include <spinlock.h>
@@ -39,7 +38,6 @@
 #include <addrspace.h>
 #include <vm.h>
 #include "copyinout.h"
-#include "opt-A2.h"
 #include "opt-A3.h"
 /*
  * Dumb MIPS-only "VM system" that is intended to only be just barely
@@ -71,11 +69,17 @@ vm_bootstrap(void)
     ram_getsize(&low_addr, &high_addr);
     /* Logically partition the remaining physical memory into fixed size frames. */
     coremap_len = (high_addr - low_addr) / PAGE_SIZE;
-    /* Initialize that the free memory should be labeled 0 */
-    for (size_t i = 0; i < coremap_len; i++) ((int *) PADDR_TO_KVADDR(low_addr))[i] = 0;
     /* The core-map should not track its own memory usage. */
     coremap_addr = low_addr;
+    /* The initial page for the system to alloc memory. */
     low_page = DIVROUNDUP(coremap_len, PAGE_SIZE);
+    for (size_t i = 0; i < low_page; i++) {
+        ((int *) PADDR_TO_KVADDR(coremap_addr))[i] = i + 1;
+    }
+    /* Initialize that the free memory should be labeled 0 */
+    for (size_t i = low_page; i < coremap_len; i++) {
+        ((int *) PADDR_TO_KVADDR(coremap_addr))[i] = 0;
+    }
     low_addr = coremap_addr + ROUNDUP(coremap_len * sizeof(size_t), PAGE_SIZE);
     #endif /* OPT_A3 */
 }
